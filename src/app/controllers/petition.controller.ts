@@ -1,5 +1,6 @@
 import {Request, Response} from "express";
 import Logger from '../../config/logger';
+import * as petitions from '../models/petition.model';
 
 const getAllPetitions = async (req: Request, res: Response): Promise<void> => {
     try{
@@ -17,16 +18,17 @@ const getAllPetitions = async (req: Request, res: Response): Promise<void> => {
 
 
 const getPetition = async (req: Request, res: Response): Promise<void> => {
-    try{
-        // Your code goes here
-        res.statusMessage = "Not Implemented Yet!";
-        res.status(501).send();
-        return;
+    Logger.http(`GET single petition id: ${req.params.id}`)
+    const id = req.params.id;
+    try {
+        const result = await petitions.getPetition( parseInt( id, 10) );
+        if ( result.length === 0 ) {
+            res.status( 404 ).send("Petition not found");
+        } else {
+            res.status( 200 ).send(result[0]);
+        }
     } catch (err) {
-        Logger.error(err);
-        res.statusMessage = "Internal Server Error";
-        res.status(500).send();
-        return;
+        res.status(500).send(`ERROR reading petition ${id}: ${err}`)
     }
 }
 
@@ -73,16 +75,13 @@ const deletePetition = async (req: Request, res: Response): Promise<void> => {
 }
 
 const getCategories = async(req: Request, res: Response): Promise<void> => {
-    try{
-        // Your code goes here
-        res.statusMessage = "Not Implemented Yet!";
-        res.status(501).send();
-        return;
+    Logger.http(`GET all categories`)
+    try {
+        const result = await petitions.getCategories();
+        res.status(200).send(result)
     } catch (err) {
-        Logger.error(err);
-        res.statusMessage = "Internal Server Error";
-        res.status(500).send();
-        return;
+        res.status(500)
+            .send(`ERROR getting categories ${err}`)
     }
 }
 
