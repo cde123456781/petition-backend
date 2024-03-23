@@ -10,10 +10,10 @@ const create = async (): Promise<void> => {
 
 
 
-const getPetition = async (id: number): Promise<Petition[]> => {
-    Logger.info(`Getting petition ${id} from the database`)
+const getImage = async (id: number): Promise<User[]> => {
+    Logger.info(`Getting user ${id} from the database`)
     const conn = await getPool().getConnection();
-    const query = 'select * from petition where id = ?';
+    const query = 'select image_filename from user where id = ? and image_filename is not null';
     const [ rows ] = await conn.query( query, [ id ]);
     await conn.release();
     return rows;
@@ -30,4 +30,4 @@ const deleteImage = async (id: number): Promise<ResultSetHeader> => {
 
 
 
-export {create, getPetition, deleteImage}
+export {create, getImage, deleteImage}
