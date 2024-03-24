@@ -3,6 +3,9 @@ import Logger from "../../config/logger";
 import * as users from '../models/user.model';
 import * as images from '../models/user.image.model';
 import * as fz from 'mz/fs';
+import path from "node:path";
+import fs from "mz/fs";
+import * as petitions from "../models/petition.model";
 
 const getImage = async (req: Request, res: Response): Promise<void> => {
     try{
@@ -34,6 +37,19 @@ const getImage = async (req: Request, res: Response): Promise<void> => {
                     return;
                 }
 
+                const filePath = path.resolve(__dirname, "../../storage/images/" + fileName);
+                try {
+                    await fs.readFile(req.body);
+
+                } catch (err) {
+                    res.status(400).send("Bad Request");
+                    return;
+                }
+
+
+                // Send image in response
+                res.sendFile(filePath);
+
             }
         }
 
@@ -46,12 +62,70 @@ const getImage = async (req: Request, res: Response): Promise<void> => {
 }
 
 const setImage = async (req: Request, res: Response): Promise<void> => {
-    Logger.http(`${req.body.fileName}`)
     try{
-        // Your code goes here
-        res.statusMessage = "Not Implemented Yet!";
-        res.status(501).send();
-        return;
+        const id = parseInt(req.params.id, 10);
+        // Check if id is NaN
+        if (isNaN((id))) {
+            res.status(404).send("Invalid ID");
+            return;
+        }
+
+        const token = req.get("X-Authorization");
+        if (token === undefined) {
+            res.status(401).send("Unauthorized");
+            return;
+        } else {
+            const tokenResult = await users.checkToken(token);
+            if (tokenResult.length === 0) {
+                res.status(401).send("Unauthorized");
+                return;
+            } else {
+                const userId = tokenResult[0].id;
+                const contentType = req.get("Content-Type");
+
+                const userResult = await users.getUser(id);
+                if (userResult.length === 0) {
+                    res.status(404).send("User not found");
+                    return;
+                }
+
+                let fileFormat;
+                if (contentType === "image/png") {
+                    fileFormat = ".png";
+                } else if (contentType === "image/jpeg") {
+                    fileFormat = ".jpeg";
+                } else if (contentType === "image/gif") {
+                    fileFormat = ".gif";
+                } else {
+                    res.status(400).send("Content type not valid");
+                    return;
+                }
+
+                const filePath = path.resolve(__dirname, "../../storage/images/user" + id + fileFormat);
+
+                let data;
+                try {
+                    data = await fs.readFile(req.body);
+
+                } catch (err) {
+                    res.status(400).send("Bad Request");
+                    return;
+                }
+
+                const doesPetitionHaveFile = (await images.getImageFilename(id)).length > 0;
+
+                await fs.writeFile(filePath, data);
+
+                await images.updateImageFilename(id, "petition" + id + fileFormat);
+
+                if (doesPetitionHaveFile) {
+                    res.status(200).send("Image updated");
+                } else {
+                    res.status(201).send("Image created");
+                }
+            }
+
+        }
     } catch (err) {
         Logger.error(err);
         res.statusMessage = "Internal Server Error";
@@ -88,7 +162,15 @@ const deleteImage = async (req: Request, res: Response): Promise<void> => {
                     if (result.length === 0) {
                         res.status(404).send("Image not found");
                     } else {
-                        Logger.http(`${result[0].image_filename} - ${typeof (result[0].image_filename)}`)
+                        const filename = result[0].image_filename;
+                        const filePath = path.resolve(__dirname, "../../storage/images/" + filename);
+
+                        try {
+                            await fs.unlink(filePath);
+                        } catch (err) {
+                            res.status(404).send("File not found");
+                            return;
+                        }
                         await images.deleteImage(id);
                         res.status(200).send("Deleted");
 
