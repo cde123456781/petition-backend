@@ -9,6 +9,7 @@ import * as supportTiers from "../models/petition.support_tier.model";
 
 
 const addSupportTier = async (req: Request, res: Response): Promise<void> => {
+    Logger.http("TESTING ADD SUPPORT TIER")
     try{
         const id = parseInt(req.params.id, 10);
         // Check if id is NaN
@@ -200,7 +201,7 @@ const deleteSupportTier = async (req: Request, res: Response): Promise<void> => 
                         if (supporterCount > 0) {
                             res.status(403).send("Petition tier still has supporters");
                         } else {
-                            if (supportTiers.checkTierBelongToPetition(petitionId, tierId)) {
+                            if (await supportTiers.checkTierBelongToPetition(petitionId, tierId)) {
                                 // Is this the last tier for the petition
                                 if (await supportTiers.getTierCount(petitionId) === 1) {
                                     res.status(403).send("Cannot delete last tier");

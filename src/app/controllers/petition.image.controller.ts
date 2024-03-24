@@ -2,7 +2,7 @@ import {Request, Response} from "express";
 import Logger from "../../config/logger";
 import * as petitions from "../models/petition.model";
 import * as images from "../models/petition.image.model";
-import path from "node:path";
+import path from "path";
 import * as users from "../models/user.model";
 import fs from "mz/fs";
 
@@ -24,31 +24,38 @@ const getImage = async (req: Request, res: Response): Promise<void> => {
                 res.status(404).send("Image not found");
             } else {
                 // Need to use a buffer for the image
+                let contentType;
                 const fileName = result[0].image_filename.toLowerCase();
                 if (fileName.endsWith("png")) {
                     res.set("Content-Type", "image/png");
+                    contentType = "image/png";
                 } else if (fileName.endsWith("jpg") || fileName.endsWith("jpeg")) {
                     res.set("Content-Type", "image/jpeg");
+                    contentType = "image/jpeg";
                 } else if (fileName.endsWith("gif")) {
                     res.set("Content-Type", "image/gif");
+                    contentType = "image/gif";
                 } else {
                     res.status(404).send("Invalid image type");
                     return;
                 }
                 // Need to check if the file exists in storage
 
-                const filePath = path.resolve(__dirname, "../../storage/images/" + fileName);
+                const filePath = path.resolve("storage/images/" + fileName);
                 try {
-                    await fs.readFile(req.body);
+                    await fs.readFile(filePath);
 
                 } catch (err) {
-                    res.status(400).send("Bad Request");
-                    return;
+                    if (err.code === "ENOENT") {
+                        Logger.http(("HIHIHIH"))
+                        res.status(400).send("Bad Request");
+                        return;
+                    }
                 }
 
 
                 // Send image in response
-                res.sendFile(filePath);
+                res.status(200).sendFile(filePath,  {headers: {"Content-Type": contentType}});
 
             }
         }
@@ -99,7 +106,7 @@ const setImage = async (req: Request, res: Response): Promise<void> => {
                         return;
                     }
 
-                    const filePath = path.resolve(__dirname, "../../storage/images/petition" + id + fileFormat);
+                    const filePath = path.resolve("storage/images/petition_" + id + fileFormat);
                     if (await petitions.checkOwner(id, userId)) {
                         // Is there an image sent through req
 
@@ -108,15 +115,23 @@ const setImage = async (req: Request, res: Response): Promise<void> => {
                             data = await fs.readFile(req.body);
 
                         } catch (err) {
-                            res.status(400).send("Bad Request");
-                            return;
+                            if (err.code === "ENOENT") {
+                                Logger.http(("HIHIHIH"))
+                                Logger.http(data);
+                                res.status(400).send("Bad Request");
+                                return;
+                            }
+                        }
+
+                        if (! Buffer.isBuffer(req.body)) {
+                            res.status(400).send();
                         }
 
                         const doesPetitionHaveFile = (await images.getImageFilename(id)).length > 0;
 
-                        await fs.writeFile(filePath, data);
+                        await fs.writeFile(filePath, req.body, "base64");
 
-                        await images.updateImageFilename(id, "petition" + id + fileFormat);
+                        await images.updateImageFilename(id, "petition_" + id + fileFormat);
 
                         if (doesPetitionHaveFile) {
                             res.status(200).send("Image updated");

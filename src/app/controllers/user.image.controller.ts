@@ -2,10 +2,8 @@ import {Request, Response} from "express";
 import Logger from "../../config/logger";
 import * as users from '../models/user.model';
 import * as images from '../models/user.image.model';
-import * as fz from 'mz/fs';
-import path from "node:path";
+import path from "path";
 import fs from "mz/fs";
-import * as petitions from "../models/petition.model";
 
 const getImage = async (req: Request, res: Response): Promise<void> => {
     try{
@@ -26,29 +24,40 @@ const getImage = async (req: Request, res: Response): Promise<void> => {
             } else {
                 // Need to use a buffer for the image
                 const fileName = result[0].image_filename.toLowerCase();
+
+                let contentType;
                 if (fileName.endsWith("png")) {
                     res.set("Content-Type", "image/png");
+                    contentType = "image/png";
                 } else if (fileName.endsWith("jpg") || fileName.endsWith("jpeg")) {
                     res.set("Content-Type", "image/jpeg");
+                    contentType = "image/jpeg";
                 } else if (fileName.endsWith("gif")) {
                     res.set("Content-Type", "image/gif");
+                    contentType = "image/gif";
                 } else {
                     res.status(404).send("Invalid image type");
                     return;
                 }
 
-                const filePath = path.resolve(__dirname, "../../storage/images/" + fileName);
+
+
+
+                const filePath = path.resolve("storage/images/" + fileName);
                 try {
-                    await fs.readFile(req.body);
+                    await fs.readFile(filePath);
 
                 } catch (err) {
-                    res.status(400).send("Bad Request");
-                    return;
+                    if (err.code === "ENOENT") {
+                        Logger.http(("HIHIHIH"))
+                        res.status(400).send("Bad Request");
+                        return;
+                    }
                 }
 
 
                 // Send image in response
-                res.sendFile(filePath);
+                res.status(200).sendFile(filePath,  {headers: {"Content-Type": contentType}});
 
             }
         }
@@ -83,6 +92,11 @@ const setImage = async (req: Request, res: Response): Promise<void> => {
                 const userId = tokenResult[0].id;
                 const contentType = req.get("Content-Type");
 
+                if ((await users.checkTokenWithId(token, userId)).length === 0) {
+                    res.status(403).send("Token does not belong to user id");
+                    return;
+                }
+
                 const userResult = await users.getUser(id);
                 if (userResult.length === 0) {
                     res.status(404).send("User not found");
@@ -97,26 +111,34 @@ const setImage = async (req: Request, res: Response): Promise<void> => {
                 } else if (contentType === "image/gif") {
                     fileFormat = ".gif";
                 } else {
+                    Logger.http(`${contentType}`)
                     res.status(400).send("Content type not valid");
                     return;
                 }
 
-                const filePath = path.resolve(__dirname, "../../storage/images/user" + id + fileFormat);
 
+                const filePath = "storage/images/user_" + id + fileFormat;
                 let data;
                 try {
                     data = await fs.readFile(req.body);
 
                 } catch (err) {
-                    res.status(400).send("Bad Request");
-                    return;
+                    if (err.code === "ENOENT") {
+                        Logger.http(("HIHIHIH"))
+                        Logger.http(data);
+                        res.status(400).send("Bad Request");
+                        return;
+                    }
+                }
+                if (! Buffer.isBuffer(req.body)) {
+                    res.status(400).send();
                 }
 
                 const doesPetitionHaveFile = (await images.getImageFilename(id)).length > 0;
 
-                await fs.writeFile(filePath, data);
+                await fs.writeFile(filePath, req.body, "base64");
 
-                await images.updateImageFilename(id, "petition" + id + fileFormat);
+                await images.updateImageFilename(id, "user_" + id + fileFormat);
 
                 if (doesPetitionHaveFile) {
                     res.status(200).send("Image updated");
@@ -163,7 +185,7 @@ const deleteImage = async (req: Request, res: Response): Promise<void> => {
                         res.status(404).send("Image not found");
                     } else {
                         const filename = result[0].image_filename;
-                        const filePath = path.resolve(__dirname, "../../storage/images/" + filename);
+                        const filePath = path.resolve("storage/images/" + filename);
 
                         try {
                             await fs.unlink(filePath);

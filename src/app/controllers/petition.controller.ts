@@ -6,12 +6,13 @@ import * as schemas from "../resources/schemas.json";
 import * as users from "../models/user.model";
 import * as supporters from "../models/petition.supporter.model"
 import * as supportTier from "../models/petition.support_tier.model";
+import {start} from "node:repl";
 
 const getAllPetitions = async (req: Request, res: Response): Promise<void> => {
     try{
         const validation = await validate(
             schemas.petition_search,
-            req.body
+            req.query
         );
 
         if (validation !== true) {
@@ -20,67 +21,199 @@ const getAllPetitions = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const startIndex = req.body.startIndex;
-        const count = req.body.count;
+        const startIndex = req.query.startIndex;
+        const count = req.query.count;
+        Logger.info(`Start: ${startIndex}  = Count: ${count}`)
 
+        const query = req.query;
 
-        const q = req.body.q;
-        const categoryIds = req.body.categoryIds;
-        const supportingCost = req.body.supportingCost;
-        const ownerId = req.body.ownerId;
-        const supporterId = req.body.supporterId;
-        const sortBy = req.body.sortBy;
+        const q = query.q;
+        const categoryIds  = query.categoryIds;
+        let supportingCost = query.supportingCost;
+        const ownerId = query.ownerId;
+        let supporterId = query.supporterId;
+        const sortBy = query.sortBy;
 
         const updateParams = [];
-        const updateValues = [];
+        const updateValues: string[] = [];
 
+
+        Logger.info(typeof categoryIds)
         if (q !== undefined) {
             updateParams.push("q");
-            updateValues.push(q);
+            if (typeof q === "string") {
+                updateValues.push(q);
+            }
         }
+
 
         if (categoryIds !== undefined) {
             updateParams.push("categoryIds");
             let categoryIdsValue = "(";
-            for (let i = 0; i < categoryIds.length; i++) {
-                if (await petitions.checkCategoryId(categoryIds[i])) {
-                    categoryIdsValue += categoryIds[i];
-                    if (i < categoryIds.length - 1) {
-                        categoryIdsValue += ", ";
-                    }
-                } else {
-                    if (categoryIdsValue.slice(-1) === ",") {
-                        categoryIdsValue = categoryIdsValue.slice(0, -1);
-                    }
-                }
+            if (typeof categoryIds === "string") {
+                categoryIdsValue += categoryIds
+            } else if (typeof categoryIds === "object") {
+                // @ts-ignore
+                categoryIdsValue += categoryIds.toString();
             }
             categoryIdsValue += ")";
             updateValues.push(categoryIdsValue);
         }
 
-        if (supportingCost !== undefined) {
-            updateParams.push("supportingCost");
-            updateValues.push(supportingCost);
-        }
+
 
         if (ownerId !== undefined) {
             updateParams.push("ownerId");
-            updateValues.push(ownerId);
+            if (typeof ownerId === "string") {
+                updateValues.push(ownerId);
+            }
         }
 
-        if (supporterId !== undefined) {
-            updateParams.push("supporterId");
-            updateValues.push(supporterId);
-        }
 
         if (sortBy !== undefined) {
             updateParams.push("sortBy");
-            updateValues.push(sortBy);
+            if (typeof sortBy === "string") {
+                updateValues.push(sortBy);
+            }
         }
 
         const result = await petitions.getAll(updateParams, updateValues);
-        res.status(200).send({"petitions": result.slice(startIndex, startIndex + count), "count": count});
+        let actualList: PetitionAll[] = [];
 
+        let minCost = 0;
+        let numSupporters = 0;
+        let supportersList: Supporter[] = [];
+        let actualSupportingCost;
+        let actualSupportingId;
+
+        if (typeof supportingCost === "string") {
+            supportingCost = supportingCost.toString();
+            actualSupportingCost = parseInt(supportingCost, 10);
+        }
+        if (typeof supporterId === "string") {
+            supporterId = supporterId.toString();
+            actualSupportingId = parseInt(supporterId, 10);
+        }
+
+
+
+
+        for (const item of result) {
+            minCost = await petitions.getMinCost(item.petitionId);
+            numSupporters = await petitions.getSupporterCount(item.petitionId);
+            item.supportingCost = minCost;
+            item.numberOfSupporters = numSupporters;
+            supportersList = await petitions.getSupporterIds(item.petitionId);
+            if (supportingCost !== undefined) {
+                if (item.supportingCost <= actualSupportingCost) {
+                    if (supporterId !== undefined) {
+                        for (const item1 of supportersList) {
+                            if (item1.user_id === actualSupportingId) {
+                                actualList.push(item);
+                            }
+                        }
+                    } else {
+                        actualList.push(item);
+                    }
+                }
+            } else {
+
+                if (supporterId !== undefined) {
+                    for (const item1 of supportersList) {
+                        Logger.info(`ID ${item1.user_id}: WANTED: ${actualSupportingId}`)
+                        if (item1.user_id === actualSupportingId) {
+                            actualList.push(item);
+                        }
+                    }
+                } else {
+                    actualList.push(item);
+                }
+            }
+        }
+
+        let temp;
+        // Use a sorting algorithm to sort by cost IF sortBy says so
+        if (sortBy === "COST_ASC") {
+            Logger.info("WTF")
+            for (let i = 0; i < actualList.length; i++) {
+                for (let j = 0; j < actualList.length - i - 1; j++) {
+                    if (actualList[j].supportingCost > actualList[j + 1].supportingCost) {
+                        temp = actualList[j];
+                        actualList[j] = actualList[j + 1];
+                        actualList[j + 1] = temp;
+
+                    }
+                    if (actualList[j].supportingCost === actualList[j + 1].supportingCost) {
+                        if (actualList[j].petitionId > actualList[j + 1].petitionId) {
+                            temp = actualList[j];
+                            actualList[j] = actualList[j + 1];
+                            actualList[j + 1] = temp;
+
+                        }
+                    }
+                }
+            }
+
+        }
+
+        if (sortBy === "COST_DESC") {
+            for (let i = 0; i < actualList.length; i++) {
+                for (let j = 0; j < actualList.length - i - 1; j++) {
+                    if (actualList[j].supportingCost < actualList[j + 1].supportingCost) {
+                        temp = actualList[j];
+                        actualList[j] = actualList[j + 1];
+                        actualList[j + 1] = temp;
+
+                    }
+                    if (actualList[j].supportingCost === actualList[j + 1].supportingCost) {
+                        if (actualList[j].petitionId > actualList[j + 1].petitionId) {
+                            temp = actualList[j];
+                            actualList[j] = actualList[j + 1];
+                            actualList[j + 1] = temp;
+
+                        }
+                    }
+                }
+            }
+        }
+
+
+
+        Logger.info(actualList)
+        Logger.info(`Precount: ${count}`)
+
+        let actualStartIndex;
+        if (typeof startIndex === "string") {
+            actualStartIndex = parseInt(startIndex, 10);
+        }
+
+
+        let actualCount;
+        const returnCount = actualList.length;
+        if (typeof count === "string") {
+            actualCount = parseInt(count, 10);
+        }
+
+
+        if (startIndex !== undefined) {
+            if (count !== undefined) {
+                actualList = actualList.slice(actualStartIndex, actualStartIndex + actualCount);
+            } else {
+                actualList = actualList.slice(actualStartIndex);
+            }
+        }
+        if (count === undefined) {
+            actualCount = actualList.length;
+        }
+        Logger.info(`Length: ${actualList.length}`)
+        Logger.info(`Count: ${count}`)
+
+
+
+        res.status(200).send({"petitions": actualList, "count": returnCount});
+
+
+        res.status(200).send();
 
     } catch (err) {
         Logger.error(err);
@@ -146,12 +279,13 @@ const addPetition = async (req: Request, res: Response): Promise<void> => {
                 const description = req.body.description;
                 const categoryId = req.body.categoryId;
                 const supportTiers = req.body.supportTiers;
+                Logger.info(supportTiers)
 
-                if (petitions.checkPetitionTitle(title)) {
+                if (await petitions.checkPetitionTitle(title)) {
                     res.status(403).send("Title already exists");
                 } else {
                     // Is categoryId valid?
-                    if (petitions.checkCategoryId(categoryId)) {
+                    if (await petitions.checkCategoryId(categoryId)) {
                         // Check support tier titles
                         const tierTitles: string[] = [];
                         for (let i = 0; i ++; i < supportTiers.length) {
@@ -169,8 +303,8 @@ const addPetition = async (req: Request, res: Response): Promise<void> => {
                         const petitionId = parseInt(await petitions.getPetitionIdFromTitle(title), 10);
 
                         // Create tiers
-                        for (let i = 0; i++; i < supportTiers.length) {
-                            await supportTier.addSupportTier(petitionId, supportTiers[i].title, supportTiers[i].description, parseInt(supportTiers[i].cost, 10));
+                        for (const item of supportTiers) {
+                            await supportTier.addSupportTier(petitionId, item.title, item.description, parseInt(item.cost, 10));
                         }
 
                         res.status(201).send({"petitionId": petitionId});
@@ -223,7 +357,7 @@ const editPetition = async (req: Request, res: Response): Promise<void> => {
                 const title = req.body.title;
                 const description = req.body.description;
                 const categoryId = req.body.categoryId;
-                if ( petitions.checkOwner(petitionId, userId)) {
+                if (await petitions.checkOwner(petitionId, userId)) {
                     const updateParams: string[] = [];
                     const updateValues: string[] = [];
                     if (title !== undefined) {
@@ -285,6 +419,7 @@ const deletePetition = async (req: Request, res: Response): Promise<void> => {
                 if (petitionResult.length === 0) {
                     res.status(404).send("Petition doesn't exist");
                 } else {
+                    Logger.info(petitionResult[0].owner_id)
                     if (parseInt(petitionResult[0].owner_id, 10) === userId) {
                         if (await supporters.checkPetitionHasSupporters(id)) {
                             res.status(403).send("Petition has supporters");

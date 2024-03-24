@@ -40,7 +40,7 @@ const getImageFilename = async (id: number): Promise<Petition[]> => {
 const updateImageFilename = async (id: number, imageFilename: string): Promise<ResultSetHeader> => {
     Logger.info(`Updating image filename of ${id}`);
     const conn = await getPool().getConnection();
-    const query = 'updating user set image_filename = ? where id = ?';
+    const query = 'update user set image_filename = ? where id = ?';
     const [ rows ] = await conn.query( query, [imageFilename, id] );
     await conn.release();
     return rows;

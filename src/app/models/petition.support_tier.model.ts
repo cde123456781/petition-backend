@@ -40,13 +40,14 @@ const updateTier = async (id: number, updateParams: string[], updateValues: stri
         if (updateParams[i] === "cost") {
             query += updateParams[i] + ` = ` + parseInt(updateValues[i], 10);
         } else {
-            query += updateParams[i] + ` = ` + updateValues[i];
+            query += updateParams[i] + ` = "` + updateValues[i] + `"`;
         }
         if (i < updateParams.length - 1) {
             query += `, `;
         }
     }
-    query += `where id = ?`
+    query += ` where id = ?`
+    Logger.info(query)
     const [ rows ] = await conn.query( query, [id] );
     await conn.release();
     return rows;
