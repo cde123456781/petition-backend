@@ -239,7 +239,10 @@ const getPetition = async (req: Request, res: Response): Promise<void> => {
             res.status( 404 ).send("Petition not found");
         } else {
             const supporterCount = await petitions.getSupporterCount(id);
-            const moneyRaised = await petitions.getMoneyRaised(id);
+            let moneyRaised = await petitions.getMoneyRaised(id);
+            if (moneyRaised === null) {
+                moneyRaised = 0;
+            }
             const supportTiers = await supportTier.getSupportTiers(id);
             res.status(200).send({"petitionId": result[0].petitionId, "title": result[0].title,
                 "categoryId": result[0].categoryId, "ownerId": result[0].ownerId, "ownerFirstName": result[0].ownerFirstName,
